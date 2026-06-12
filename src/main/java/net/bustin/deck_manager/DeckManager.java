@@ -1,6 +1,11 @@
 package net.bustin.deck_manager;
 
 import com.mojang.logging.LogUtils;
+import net.bustin.deck_manager.blocks.ModBlocks;
+import net.bustin.deck_manager.blocks.entity.ModBlockEntities;
+import net.bustin.deck_manager.items.ModItems;
+import net.bustin.deck_manager.menu.ModMenuTypes;
+import net.bustin.deck_manager.network.ModNetworks;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -20,6 +25,10 @@ public class DeckManager {
         // Mod event bus (lifecycle)
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(this::commonSetup);
+        ModBlocks.register(modBus);
+        ModBlockEntities.register(modBus);
+        ModItems.register(modBus);
+        ModMenuTypes.register(modBus);
 
         LOGGER.info("DeckManager loaded");
 
@@ -37,5 +46,6 @@ public class DeckManager {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+        ModNetworks.onCommonSetup(event);
     }
 }

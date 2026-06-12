@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "deck_manager:gui/map/wooden",
+    "particle": "deck_manager:gui/map/wooden"
+  }
+}
+
