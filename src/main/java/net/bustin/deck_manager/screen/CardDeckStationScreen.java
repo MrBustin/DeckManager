@@ -2,11 +2,14 @@ package net.bustin.deck_manager.screen;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
+import iskallia.vault.client.gui.framework.ScreenRenderers;
+import iskallia.vault.client.gui.framework.ScreenTextures;
 import net.bustin.deck_manager.menu.CardDeckStationMenu;
 import net.bustin.deck_manager.network.LoadDeckPresetC2SPacket;
 import net.bustin.deck_manager.network.ModNetworks;
 import net.bustin.deck_manager.network.RequestDeckPresetsC2SPacket;
 import net.bustin.deck_manager.network.SaveHeldDeckPresetC2SPacket;
+import net.bustin.deck_manager.network.SyncDeckPresetsS2CPacket.PreviewCard;
 import net.bustin.deck_manager.network.SyncDeckPresetsS2CPacket.PresetSummary;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -28,6 +31,10 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("MM/dd HH:mm");
     private static final ResourceLocation SOPHISTICATED_GUI_CONTROLS =
             new ResourceLocation("sophisticatedcore", "textures/gui/gui_controls.png");
+    private static final int DECK_BACKGROUND_PADDING = 20;
+    private static final int DECK_SLOT_ORIGIN = 21;
+    private static final int PREVIEW_DECK_X = 168;
+    private static final int PREVIEW_DECK_Y = 52;
 
     private final List<PresetSummary> presets = new ArrayList<>();
     private EditBox presetNameBox;
@@ -37,8 +44,8 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
 
     public CardDeckStationScreen(CardDeckStationMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
-        this.imageWidth = 350;
-        this.imageHeight = 232;
+        this.imageWidth = 370;
+        this.imageHeight = 270;
     }
 
     @Override
@@ -93,23 +100,18 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
         fill(poseStack, x, y, x + this.imageWidth, y + this.imageHeight, 0xFF1F2329);
         fill(poseStack, x + 4, y + 4, x + this.imageWidth - 4, y + this.imageHeight - 4, 0xFF2F3540);
         fill(poseStack, x + 12, y + 52, x + 156, y + 116, 0xFF171A1F);
-        fill(poseStack, x + 168, y + 52, x + this.imageWidth - 12, y + 128, 0xFF171A1F);
-        fill(poseStack, x + 168, y + 148, x + this.imageWidth - 12, y + 226, 0xFF171A1F);
+        fill(poseStack, x + 168, y + 52, x + this.imageWidth - 12, y + 166, 0xFF171A1F);
+        fill(poseStack, x + 168, y + 186, x + this.imageWidth - 12, y + 264, 0xFF171A1F);
 
         drawSlot(poseStack, x + 144, y + 53);
-        for (int row = 0; row < 4; row++) {
-            for (int column = 0; column < 9; column++) {
-                drawSlot(poseStack, x + 169 + column * 18, y + 53 + row * 18);
-            }
-        }
 
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
-                drawSlot(poseStack, x + 169 + column * 18, y + 142 + row * 18);
+                drawSlot(poseStack, x + 169 + column * 18, y + 180 + row * 18);
             }
         }
         for (int column = 0; column < 9; column++) {
-            drawSlot(poseStack, x + 169 + column * 18, y + 200);
+            drawSlot(poseStack, x + 169 + column * 18, y + 238);
         }
     }
 
@@ -120,7 +122,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
         this.font.draw(poseStack, new TextComponent("Saved presets"), 14, 56, 0xBFC7D5);
         this.font.draw(poseStack, new TextComponent("Deck"), 144, 44, 0x8F98A8);
         this.font.draw(poseStack, new TextComponent("Selected preset"), 170, 42, 0xBFC7D5);
-        this.font.draw(poseStack, new TextComponent("Inventory"), 170, 132, 0xBFC7D5);
+        this.font.draw(poseStack, new TextComponent("Inventory"), 170, 170, 0xBFC7D5);
 
         renderPresetList(poseStack);
         renderSelectedPreset(poseStack);
@@ -258,13 +260,14 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
             return;
         }
 
-        List<ItemStack> previewCards = preset.previewCards();
+        renderDeckLayout(poseStack, preset);
+
+        List<PreviewCard> previewCards = preset.previewCards();
         for (int i = 0; i < previewCards.size() && i < 36; i++) {
-            int column = i % 9;
-            int row = i / 9;
-            int x = this.leftPos + 170 + column * 18;
-            int y = this.topPos + 54 + row * 18;
-            ItemStack stack = previewCards.get(i);
+            PreviewCard previewCard = previewCards.get(i);
+            int x = deckPreviewX(preset) + previewCard.x() * 18;
+            int y = deckPreviewY(preset) + previewCard.y() * 18;
+            ItemStack stack = previewCard.stack();
             this.itemRenderer.renderAndDecorateItem(stack, x, y);
             if (!isPreviewCardAvailable(preset, i)) {
                 renderSophisticatedFilterOverlay(poseStack, x, y);
@@ -289,19 +292,74 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     }
 
     private boolean isPresetPreviewGrid(double mouseX, double mouseY) {
-        return mouseX >= this.leftPos + 170 && mouseX < this.leftPos + 332
-                && mouseY >= this.topPos + 54 && mouseY < this.topPos + 126;
+        return mouseX >= this.leftPos + PREVIEW_DECK_X && mouseX < this.leftPos + PREVIEW_DECK_X + 182
+                && mouseY >= this.topPos + PREVIEW_DECK_Y && mouseY < this.topPos + PREVIEW_DECK_Y + 110;
     }
 
     private void clearPresetPreviewGrid(PoseStack poseStack) {
         int x = this.leftPos;
         int y = this.topPos;
-        fill(poseStack, x + 168, y + 52, x + this.imageWidth - 12, y + 128, 0xFF171A1F);
-        for (int row = 0; row < 4; row++) {
-            for (int column = 0; column < 9; column++) {
-                drawSlot(poseStack, x + 169 + column * 18, y + 53 + row * 18);
+        fill(poseStack, x + 168, y + 52, x + this.imageWidth - 12, y + 166, 0xFF171A1F);
+    }
+
+    private void renderDeckLayout(PoseStack poseStack, PresetSummary preset) {
+        List<String> layoutRows = preset.layoutRows();
+        if (layoutRows.isEmpty()) {
+            drawVaultDeckBackground(poseStack, this.leftPos + PREVIEW_DECK_X, this.topPos + PREVIEW_DECK_Y,
+                    DECK_BACKGROUND_PADDING + 9 * 18, DECK_BACKGROUND_PADDING + 4 * 18);
+            for (int row = 0; row < 4; row++) {
+                for (int column = 0; column < 9; column++) {
+                    drawCardDeckSlot(poseStack, this.leftPos + PREVIEW_DECK_X + DECK_BACKGROUND_PADDING + column * 18,
+                            this.topPos + PREVIEW_DECK_Y + DECK_BACKGROUND_PADDING + row * 18);
+                }
+            }
+            return;
+        }
+
+        int deckX = this.leftPos + PREVIEW_DECK_X;
+        int deckY = this.topPos + PREVIEW_DECK_Y;
+        drawVaultDeckBackground(poseStack, deckX, deckY, deckBackgroundWidth(layoutRows), deckBackgroundHeight(layoutRows));
+
+        int startX = deckPreviewX(preset) - 1;
+        int startY = deckPreviewY(preset) - 1;
+        for (int row = 0; row < layoutRows.size(); row++) {
+            String layoutRow = layoutRows.get(row);
+            for (int column = 0; column < layoutRow.length(); column++) {
+                char slotType = layoutRow.charAt(column);
+                if (slotType == 'X') {
+                    continue;
+                }
+                drawCardDeckSlot(poseStack, startX + column * 18, startY + row * 18);
+                if (slotType == 'A') {
+                    fill(poseStack, startX + column * 18 + 2, startY + row * 18 + 2,
+                            startX + column * 18 + 16, startY + row * 18 + 16, 0x552D73D5);
+                }
             }
         }
+    }
+
+    private int deckPreviewX(PresetSummary preset) {
+        return this.leftPos + PREVIEW_DECK_X + DECK_SLOT_ORIGIN;
+    }
+
+    private int deckPreviewY(PresetSummary preset) {
+        return this.topPos + PREVIEW_DECK_Y + DECK_SLOT_ORIGIN;
+    }
+
+    private int deckBackgroundWidth(List<String> layoutRows) {
+        return DECK_BACKGROUND_PADDING + layoutWidth(layoutRows) * 18;
+    }
+
+    private int deckBackgroundHeight(List<String> layoutRows) {
+        return DECK_BACKGROUND_PADDING + layoutRows.size() * 18;
+    }
+
+    private int layoutWidth(List<String> layoutRows) {
+        int width = 0;
+        for (String row : layoutRows) {
+            width = Math.max(width, row.length());
+        }
+        return width == 0 ? 9 : width;
     }
 
 
@@ -344,5 +402,13 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     private void drawSlot(PoseStack poseStack, int x, int y) {
         fill(poseStack, x, y, x + 18, y + 18, 0xFF0F1115);
         fill(poseStack, x + 1, y + 1, x + 17, y + 17, 0xFF252A33);
+    }
+
+    private void drawCardDeckSlot(PoseStack poseStack, int x, int y) {
+        ScreenTextures.INSET_CARD_SLOT_BACKGROUND.blit(poseStack, x, y, 0, 18, 18);
+    }
+
+    private void drawVaultDeckBackground(PoseStack poseStack, int x, int y, int width, int height) {
+        ScreenRenderers.getImmediate().render(ScreenTextures.CARD_DECK_BACKGROUND_9, poseStack, x, y, 0, width, height);
     }
 }

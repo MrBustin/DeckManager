@@ -83,9 +83,9 @@ Vault deck config source:
 
 Deck layout rules from `decks.json`:
 
-- `X` means a normal card slot.
+- `X` means no slot.
+- `O` means a normal card slot.
 - `A` means an arcane-only card slot.
-- `O` means no slot.
 
 Runtime slot validation from `CardDeckContainerMenu.DeckSlot.mayPlace`:
 
@@ -272,9 +272,12 @@ Stage 8 UI bug fixes:
 - Preset summaries now sync preview `CardItem` stacks, and selecting a preset renders that preset's cards over the right-side card grid.
 - The visible right-side card grid is now a selected-preset preview instead of raw station storage.
 - Physical station card-storage slots are hidden offscreen, preventing unrelated stored cards from rendering through the selected preset preview.
-- Preset card previews only show physical cards currently matched in station storage for the selected preset.
 - Preset card previews are available even when no deck is inserted in the station deck slot.
 - Preset previews now sync from the saved preset card data and track per-card physical availability; cards currently in station storage render normally, while saved cards that are no longer in storage render with the same filter-slot overlay style used by Sophisticated Core.
+- Preset summaries now include the deck layout rows read from `run/config/the_vault/card/decks.json` and each preview card's saved `CardPos`.
+- The selected preset preview now renders in the same shape as the source deck layout on Vault Hunters' atlas-rendered card deck background: `X` cells are not drawn, `O` cells render as normal slots using Vault Hunters' card slot texture, and `A` cells render as arcane-tinted slots.
+- Preview cards are drawn in their saved deck coordinates instead of being compacted into a storage grid.
+- Preview layouts use the same deck panel sizing and slot origin as Vault Hunters' `CardDeckScreen`: 20px deck-background padding with card item origins at background + 21px.
 - Save and load now force an open container sync after station inventory mutations to reduce stale client-side slot contents.
 
 ## Notes For Next Session

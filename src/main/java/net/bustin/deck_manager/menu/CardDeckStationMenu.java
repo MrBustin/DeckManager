@@ -131,12 +131,12 @@ public class CardDeckStationMenu extends AbstractContainerMenu {
     private void addPlayerInventory(Inventory inventory) {
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
-                this.addSlot(new Slot(inventory, column + row * 9 + 9, 170 + column * 18, 143 + row * 18));
+                this.addSlot(new Slot(inventory, column + row * 9 + 9, 170 + column * 18, 181 + row * 18));
             }
         }
 
         for (int column = 0; column < 9; column++) {
-            this.addSlot(new Slot(inventory, column, 170 + column * 18, 201));
+            this.addSlot(new Slot(inventory, column, 170 + column * 18, 239));
         }
     }
 }

@@ -2,20 +2,29 @@ package net.bustin.deck_manager.network;
 
 import iskallia.vault.core.card.Card;
 import iskallia.vault.core.card.CardDeck;
+import iskallia.vault.core.card.CardPos;
 import iskallia.vault.container.inventory.CardDeckContainer;
 import iskallia.vault.item.CardDeckItem;
 import iskallia.vault.item.CardItem;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.bustin.deck_manager.blocks.entity.custom.CardDeckStationBlockEntity;
 import net.bustin.deck_manager.blocks.entity.custom.CardDeckStationBlockEntity.DeckPreset;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.TextComponent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.items.ItemStackHandler;
 
+import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -31,7 +40,7 @@ public class DeckPresetNetworking {
                 .map(preset -> {
                     LoadPlan loadPlan = planLoad(station, preset);
                     return SyncDeckPresetsS2CPacket.PresetSummary.fromPreset(preset, loadPlan,
-                            createPresetPreviewStacks(preset));
+                            createPresetPreviewCards(preset), getDeckLayoutRows(preset.sourceDeckId()));
                 })
                 .toList();
         ModNetworks.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
@@ -200,19 +209,23 @@ public class DeckPresetNetworking {
                 currentCardStacks, match.matchedStorageSlots(), match.cardAvailability());
     }
 
-    public static List<ItemStack> createPresetPreviewStacks(DeckPreset preset) {
-        List<ItemStack> stacks = new ArrayList<>();
-        for (CompoundTag cardTag : getRequiredCardTags(preset.deckData())) {
+    public static List<SyncDeckPresetsS2CPacket.PreviewCard> createPresetPreviewCards(DeckPreset preset) {
+        List<SyncDeckPresetsS2CPacket.PreviewCard> cards = new ArrayList<>();
+        for (PositionedCardTag positionedCard : getRequiredCardEntries(preset.deckData())) {
             try {
                 Card card = new Card();
-                card.readNbt(cardTag);
+                card.readNbt(positionedCard.cardTag());
                 if (!card.getEntries().isEmpty()) {
-                    stacks.add(CardItem.create(card));
+                    cards.add(new SyncDeckPresetsS2CPacket.PreviewCard(
+                            CardItem.create(card),
+                            positionedCard.x(),
+                            positionedCard.y()
+                    ));
                 }
             } catch (RuntimeException ignored) {
             }
         }
-        return stacks;
+        return cards;
     }
 
     private static List<ItemStack> createCardStacks(Map<?, ?> cards) {
@@ -260,14 +273,14 @@ public class DeckPresetNetworking {
     }
 
     private static MatchResult findMatchingStoredCards(ItemStackHandler handler, CompoundTag deckData) {
-        List<CompoundTag> requiredCards = getRequiredCardTags(deckData);
+        List<PositionedCardTag> requiredCards = getRequiredCardEntries(deckData);
         List<Integer> matchedSlots = new ArrayList<>();
         List<Boolean> cardAvailability = new ArrayList<>();
         Set<Integer> usedSlots = new HashSet<>();
         int missingCards = 0;
 
-        for (CompoundTag requiredCard : requiredCards) {
-            int slot = findMatchingStoredCard(handler, requiredCard, usedSlots);
+        for (PositionedCardTag requiredCard : requiredCards) {
+            int slot = findMatchingStoredCard(handler, requiredCard.cardTag(), usedSlots);
             if (slot < 0) {
                 missingCards++;
                 cardAvailability.add(false);
@@ -310,15 +323,63 @@ public class DeckPresetNetworking {
     }
 
     private static List<CompoundTag> getRequiredCardTags(CompoundTag deckData) {
+        return getRequiredCardEntries(deckData).stream()
+                .map(PositionedCardTag::cardTag)
+                .toList();
+    }
+
+    private static List<PositionedCardTag> getRequiredCardEntries(CompoundTag deckData) {
         List<CompoundTag> requiredCards = new ArrayList<>();
+        List<PositionedCardTag> positionedCards = new ArrayList<>();
         ListTag cards = deckData.getList("cards", 10);
         for (int i = 0; i < cards.size(); i++) {
-            CompoundTag card = cards.getCompound(i).getCompound("card");
+            CompoundTag cardEntry = cards.getCompound(i);
+            CompoundTag card = cardEntry.getCompound("card");
             if (hasUsableCardEntries(card)) {
-                requiredCards.add(card);
+                CardPos pos = new CardPos(0, 0);
+                Tag posTag = cardEntry.get("pos");
+                if (posTag != null) {
+                    pos.readNbt(posTag);
+                }
+                positionedCards.add(new PositionedCardTag(card, pos.x, pos.y));
             }
         }
-        return requiredCards;
+        return positionedCards;
+    }
+
+    private static List<String> getDeckLayoutRows(String deckId) {
+        Path configPath = Path.of("run", "config", "the_vault", "card", "decks.json");
+        if (!Files.isRegularFile(configPath)) {
+            return List.of();
+        }
+
+        try (Reader reader = Files.newBufferedReader(configPath)) {
+            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+            JsonObject values = root.getAsJsonObject("values");
+            if (values == null || !values.has(deckId)) {
+                return List.of();
+            }
+
+            JsonObject deck = values.getAsJsonObject(deckId);
+            JsonArray layouts = deck.getAsJsonArray("layout");
+            if (layouts == null || layouts.size() == 0) {
+                return List.of();
+            }
+
+            JsonObject layout = layouts.get(0).getAsJsonObject();
+            JsonArray value = layout.getAsJsonArray("value");
+            if (value == null) {
+                return List.of();
+            }
+
+            List<String> rows = new ArrayList<>();
+            for (JsonElement row : value) {
+                rows.add(row.getAsString());
+            }
+            return rows;
+        } catch (RuntimeException | java.io.IOException exception) {
+            return List.of();
+        }
     }
 
     private static boolean hasUsableCardEntries(CompoundTag cardTag) {
@@ -423,6 +484,9 @@ public class DeckPresetNetworking {
 
     private record MatchResult(int requiredCards, List<Integer> matchedStorageSlots, int missingCards,
                                List<Boolean> cardAvailability) {
+    }
+
+    private record PositionedCardTag(CompoundTag cardTag, int x, int y) {
     }
 
     public record LoadPlan(boolean hasDeck, boolean compatibleDeck, int requiredCards, int availableCards,

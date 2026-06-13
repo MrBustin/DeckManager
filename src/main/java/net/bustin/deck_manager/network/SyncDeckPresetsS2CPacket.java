@@ -31,10 +31,16 @@ public record SyncDeckPresetsS2CPacket(BlockPos pos, List<PresetSummary> presets
             buffer.writeBoolean(preset.canStoreReturnedCards());
             buffer.writeBoolean(preset.canLoad());
             buffer.writeLong(preset.createdAt());
+            buffer.writeVarInt(preset.layoutRows().size());
+            for (String row : preset.layoutRows()) {
+                buffer.writeUtf(row);
+            }
             buffer.writeVarInt(preset.previewCards().size());
             for (int previewIndex = 0; previewIndex < preset.previewCards().size(); previewIndex++) {
-                ItemStack previewCard = preset.previewCards().get(previewIndex);
-                buffer.writeItem(previewCard);
+                PreviewCard previewCard = preset.previewCards().get(previewIndex);
+                buffer.writeItem(previewCard.stack());
+                buffer.writeVarInt(previewCard.x());
+                buffer.writeVarInt(previewCard.y());
                 buffer.writeBoolean(previewIndex < preset.previewAvailable().size()
                         && preset.previewAvailable().get(previewIndex));
             }
@@ -58,11 +64,19 @@ public record SyncDeckPresetsS2CPacket(BlockPos pos, List<PresetSummary> presets
             boolean canStoreReturnedCards = buffer.readBoolean();
             boolean canLoad = buffer.readBoolean();
             long createdAt = buffer.readLong();
+            int layoutSize = buffer.readVarInt();
+            List<String> layoutRows = new ArrayList<>(layoutSize);
+            for (int layoutIndex = 0; layoutIndex < layoutSize; layoutIndex++) {
+                layoutRows.add(buffer.readUtf());
+            }
             int previewSize = buffer.readVarInt();
-            List<ItemStack> previewCards = new ArrayList<>(previewSize);
+            List<PreviewCard> previewCards = new ArrayList<>(previewSize);
             List<Boolean> previewAvailable = new ArrayList<>(previewSize);
             for (int cardIndex = 0; cardIndex < previewSize; cardIndex++) {
-                previewCards.add(buffer.readItem());
+                ItemStack stack = buffer.readItem();
+                int cardX = buffer.readVarInt();
+                int cardY = buffer.readVarInt();
+                previewCards.add(new PreviewCard(stack, cardX, cardY));
                 previewAvailable.add(buffer.readBoolean());
             }
             presets.add(new PresetSummary(
@@ -78,6 +92,7 @@ public record SyncDeckPresetsS2CPacket(BlockPos pos, List<PresetSummary> presets
                     canStoreReturnedCards,
                     canLoad,
                     createdAt,
+                    layoutRows,
                     previewCards,
                     previewAvailable
             ));
@@ -95,9 +110,11 @@ public record SyncDeckPresetsS2CPacket(BlockPos pos, List<PresetSummary> presets
     public record PresetSummary(String name, String sourceDeckId, String sourceDeckName, int cardCount,
                                 int availableCards, int missingCards, int currentDeckCards,
                                 boolean hasDeck, boolean compatibleDeck, boolean canStoreReturnedCards,
-                                boolean canLoad, long createdAt, List<ItemStack> previewCards,
+                                boolean canLoad, long createdAt, List<String> layoutRows,
+                                List<PreviewCard> previewCards,
                                 List<Boolean> previewAvailable) {
-        public static PresetSummary fromPreset(DeckPreset preset, LoadPlan loadPlan, List<ItemStack> previewCards) {
+        public static PresetSummary fromPreset(DeckPreset preset, LoadPlan loadPlan,
+                                               List<PreviewCard> previewCards, List<String> layoutRows) {
             return new PresetSummary(
                     preset.name(),
                     preset.sourceDeckId(),
@@ -111,9 +128,13 @@ public record SyncDeckPresetsS2CPacket(BlockPos pos, List<PresetSummary> presets
                     loadPlan.canStoreReturnedCards(),
                     loadPlan.canLoad(),
                     preset.createdAt(),
+                    layoutRows,
                     previewCards,
                     loadPlan.cardAvailability()
             );
         }
+    }
+
+    public record PreviewCard(ItemStack stack, int x, int y) {
     }
 }
