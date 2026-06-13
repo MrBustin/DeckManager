@@ -40,7 +40,7 @@ public class DeckPresetNetworking {
                 .map(preset -> {
                     LoadPlan loadPlan = planLoad(station, preset);
                     return SyncDeckPresetsS2CPacket.PresetSummary.fromPreset(preset, loadPlan,
-                            createPresetPreviewCards(preset), getDeckLayoutRows(preset.sourceDeckId()));
+                            createPresetPreviewCards(preset), getDeckLayoutRows(preset.sourceDeckId(), preset.sourceDeckName()));
                 })
                 .toList();
         ModNetworks.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
@@ -347,8 +347,8 @@ public class DeckPresetNetworking {
         return positionedCards;
     }
 
-    private static List<String> getDeckLayoutRows(String deckId) {
-        Path configPath = Path.of("run", "config", "the_vault", "card", "decks.json");
+    private static List<String> getDeckLayoutRows(String deckId, String deckName) {
+        Path configPath = findDeckConfigPath();
         if (!Files.isRegularFile(configPath)) {
             return List.of();
         }
@@ -356,11 +356,16 @@ public class DeckPresetNetworking {
         try (Reader reader = Files.newBufferedReader(configPath)) {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             JsonObject values = root.getAsJsonObject("values");
-            if (values == null || !values.has(deckId)) {
+            if (values == null) {
                 return List.of();
             }
 
-            JsonObject deck = values.getAsJsonObject(deckId);
+            String configDeckId = findConfigDeckId(values, deckId, deckName);
+            if (configDeckId.isEmpty()) {
+                return List.of();
+            }
+
+            JsonObject deck = values.getAsJsonObject(configDeckId);
             JsonArray layouts = deck.getAsJsonArray("layout");
             if (layouts == null || layouts.size() == 0) {
                 return List.of();
@@ -380,6 +385,88 @@ public class DeckPresetNetworking {
         } catch (RuntimeException | java.io.IOException exception) {
             return List.of();
         }
+    }
+
+    private static Path findDeckConfigPath() {
+        Path runConfigPath = Path.of("run", "config", "the_vault", "card", "decks.json");
+        if (Files.isRegularFile(runConfigPath)) {
+            return runConfigPath;
+        }
+
+        return Path.of("config", "the_vault", "card", "decks.json");
+    }
+
+    private static String findConfigDeckId(JsonObject values, String deckId, String deckName) {
+        for (String candidate : deckIdCandidates(deckId, deckName)) {
+            if (values.has(candidate)) {
+                return candidate;
+            }
+        }
+        return "";
+    }
+
+    private static List<String> deckIdCandidates(String deckId, String deckName) {
+        List<String> candidates = new ArrayList<>();
+        addDeckIdCandidate(candidates, deckId);
+
+        String path = lastPathPart(stripNamespace(deckId));
+        addDeckIdCandidate(candidates, path);
+        if (path.endsWith("_deck")) {
+            addDeckIdCandidate(candidates, path.substring(0, path.length() - "_deck".length()));
+        }
+
+        String normalizedName = normalizeDeckName(deckName);
+        addDeckIdCandidate(candidates, normalizedName);
+        if (normalizedName.endsWith("_deck")) {
+            addDeckIdCandidate(candidates, normalizedName.substring(0, normalizedName.length() - "_deck".length()));
+        }
+
+        return candidates;
+    }
+
+    private static void addDeckIdCandidate(List<String> candidates, String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return;
+        }
+
+        String normalized = stripModelFragment(candidate).toLowerCase(java.util.Locale.ROOT);
+        if (!candidates.contains(normalized)) {
+            candidates.add(normalized);
+        }
+    }
+
+    private static String stripNamespace(String deckId) {
+        if (deckId == null) {
+            return "";
+        }
+
+        int namespaceSeparator = deckId.indexOf(':');
+        return namespaceSeparator >= 0 ? deckId.substring(namespaceSeparator + 1) : deckId;
+    }
+
+    private static String lastPathPart(String deckId) {
+        deckId = stripModelFragment(deckId);
+        int pathSeparator = deckId.lastIndexOf('/');
+        return pathSeparator >= 0 ? deckId.substring(pathSeparator + 1) : deckId;
+    }
+
+    private static String stripModelFragment(String deckId) {
+        int fragmentSeparator = deckId.indexOf('#');
+        return fragmentSeparator >= 0 ? deckId.substring(0, fragmentSeparator) : deckId;
+    }
+
+    private static String normalizeDeckName(String deckName) {
+        if (deckName == null) {
+            return "";
+        }
+
+        String normalized = deckName.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (normalized.startsWith("the_")) {
+            normalized = normalized.substring("the_".length());
+        }
+        return normalized;
     }
 
     private static boolean hasUsableCardEntries(CompoundTag cardTag) {

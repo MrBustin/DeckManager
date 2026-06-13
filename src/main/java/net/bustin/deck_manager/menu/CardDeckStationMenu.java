@@ -17,6 +17,12 @@ import net.minecraftforge.items.ItemStackHandler;
 import net.minecraftforge.items.SlotItemHandler;
 
 public class CardDeckStationMenu extends AbstractContainerMenu {
+    public static final int DECK_SLOT_X = 6;
+    public static final int DECK_SLOT_Y = 11;
+    public static final int PLAYER_INVENTORY_X = 52;
+    public static final int PLAYER_INVENTORY_Y = 202;
+    public static final int PLAYER_HOTBAR_Y = 260;
+
     private final ContainerLevelAccess access;
     private final BlockPos blockPos;
 
@@ -103,7 +109,7 @@ public class CardDeckStationMenu extends AbstractContainerMenu {
     }
 
     private void addStationSlots(ItemStackHandler stationItems) {
-        this.addSlot(new SlotItemHandler(stationItems, CardDeckStationBlockEntity.DECK_SLOT, 145, 54) {
+        this.addSlot(new SlotItemHandler(stationItems, CardDeckStationBlockEntity.DECK_SLOT, DECK_SLOT_X, DECK_SLOT_Y) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return stack.getItem() instanceof CardDeckItem;
@@ -131,12 +137,13 @@ public class CardDeckStationMenu extends AbstractContainerMenu {
     private void addPlayerInventory(Inventory inventory) {
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
-                this.addSlot(new Slot(inventory, column + row * 9 + 9, 170 + column * 18, 181 + row * 18));
+                this.addSlot(new Slot(inventory, column + row * 9 + 9,
+                        PLAYER_INVENTORY_X + column * 18, PLAYER_INVENTORY_Y + row * 18));
             }
         }
 
         for (int column = 0; column < 9; column++) {
-            this.addSlot(new Slot(inventory, column, 170 + column * 18, 239));
+            this.addSlot(new Slot(inventory, column, PLAYER_INVENTORY_X + column * 18, PLAYER_HOTBAR_Y));
         }
     }
 }
