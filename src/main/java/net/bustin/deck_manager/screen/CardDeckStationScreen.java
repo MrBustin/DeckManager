@@ -41,6 +41,10 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     private static final int SELECTED_TAB_HEIGHT = 32;
     private static final int TAB_START_X = 30;
     private static final int TAB_GAP = 2;
+    private static final int DECK_TITLE_HEIGHT = 13;
+    private static final int DECK_TITLE_HORIZONTAL_PADDING = 8;
+    private static final int DECK_TITLE_EXTRA_WIDTH = 14;
+    private static final int DECK_TITLE_Y_OFFSET = 5;
     private static final int DECK_BACKGROUND_PADDING = 20;
     private static final int DECK_SLOT_ORIGIN = 21;
     private static final int RIGHT_PANEL_X = 28;
@@ -312,6 +316,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
         int deckX = deckBackgroundX(layoutBounds);
         int deckY = deckBackgroundY(layoutBounds);
         drawVaultDeckBackground(poseStack, deckX, deckY, deckBackgroundWidth(layoutBounds), deckBackgroundHeight(layoutBounds));
+        drawDeckTitle(poseStack, preset, deckX, deckY, deckBackgroundWidth(layoutBounds));
 
         int startX = deckPreviewX(preset) - 1;
         int startY = deckPreviewY(preset) - 1;
@@ -400,8 +405,10 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
 
     private void renderPositionFallbackDeckLayout(PoseStack poseStack, PresetSummary preset) {
         LayoutBounds layoutBounds = previewCardBounds(preset.previewCards());
-        drawVaultDeckBackground(poseStack, deckBackgroundX(layoutBounds), deckBackgroundY(layoutBounds),
-                deckBackgroundWidth(layoutBounds), deckBackgroundHeight(layoutBounds));
+        int deckX = deckBackgroundX(layoutBounds);
+        int deckY = deckBackgroundY(layoutBounds);
+        drawVaultDeckBackground(poseStack, deckX, deckY, deckBackgroundWidth(layoutBounds), deckBackgroundHeight(layoutBounds));
+        drawDeckTitle(poseStack, preset, deckX, deckY, deckBackgroundWidth(layoutBounds));
 
         for (PreviewCard previewCard : preset.previewCards()) {
             drawCardDeckSlot(poseStack,
@@ -442,6 +449,33 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
 
     private void drawCardDeckSlot(PoseStack poseStack, int x, int y) {
         ScreenTextures.INSET_CARD_SLOT_BACKGROUND.blit(poseStack, x, y, 0, 18, 18);
+    }
+
+    private void drawDeckTitle(PoseStack poseStack, PresetSummary preset, int deckX, int deckY, int deckWidth) {
+        String title = deckTitle(preset);
+        int maxTextWidth = Math.max(0, deckWidth + DECK_TITLE_EXTRA_WIDTH - DECK_TITLE_HORIZONTAL_PADDING * 2);
+        String trimmedTitle = this.font.plainSubstrByWidth(title, maxTextWidth);
+        int textWidth = this.font.width(trimmedTitle);
+        int titleWidth = textWidth + DECK_TITLE_HORIZONTAL_PADDING * 2 + DECK_TITLE_EXTRA_WIDTH;
+        int titleX = deckX + (deckWidth - titleWidth) / 2;
+        int titleY = deckY + DECK_TITLE_Y_OFFSET;
+        int textY = titleY + (DECK_TITLE_HEIGHT - this.font.lineHeight) / 2;
+
+        ScreenTextures.CARD_DECK_TITLE_LARGE_3.blit(poseStack, titleX, titleY, 0, titleWidth, DECK_TITLE_HEIGHT);
+        this.font.draw(poseStack, new TextComponent(trimmedTitle),
+                titleX + DECK_TITLE_HORIZONTAL_PADDING + DECK_TITLE_EXTRA_WIDTH / 2, textY, 0x404040);
+    }
+
+    private String deckTitle(PresetSummary preset) {
+        String title;
+        if (preset.sourceDeckName() != null && !preset.sourceDeckName().isBlank()) {
+            title = preset.sourceDeckName();
+        } else if (preset.sourceDeckId() != null && !preset.sourceDeckId().isBlank()) {
+            title = preset.sourceDeckId();
+        } else {
+            title = "Deck";
+        }
+        return title.replaceFirst("\\s*\\([^)]*\\)\\s*$", "");
     }
 
     private void drawVaultDeckBackground(PoseStack poseStack, int x, int y, int width, int height) {
