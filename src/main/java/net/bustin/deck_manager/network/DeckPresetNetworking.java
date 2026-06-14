@@ -186,6 +186,68 @@ public class DeckPresetNetworking {
         sendPresets(player, station);
     }
 
+    public static void depositStationDeckCardsToPreset(ServerPlayer player, CardDeckStationBlockEntity station,
+                                                       String rawName) {
+        String presetName = sanitizePresetName(rawName);
+        if (presetName.isEmpty()) {
+            player.displayClientMessage(new TextComponent("Select a preset first."), true);
+            return;
+        }
+
+        Optional<DeckPreset> preset = station.getPreset(presetName);
+        if (preset.isEmpty()) {
+            player.displayClientMessage(new TextComponent("Preset not found: " + presetName), true);
+            return;
+        }
+
+        ItemStack stack = station.getItems().getStackInSlot(CardDeckStationBlockEntity.DECK_SLOT);
+        if (stack.isEmpty()) {
+            player.displayClientMessage(new TextComponent("Put a compatible Vault Hunters card deck in the station deck slot."), true);
+            return;
+        }
+
+        String targetDeckId = CardDeckItem.getId(stack);
+        if (!preset.get().sourceDeckId().equals(targetDeckId)) {
+            player.displayClientMessage(new TextComponent("Preset is for deck '" + preset.get().sourceDeckId()
+                    + "', not '" + targetDeckId + "'."), true);
+            return;
+        }
+
+        Optional<CardDeck> deck = CardDeckItem.getCardDeck(stack);
+        if (deck.isEmpty()) {
+            player.displayClientMessage(new TextComponent("That deck has no saved card layout yet."), true);
+            return;
+        }
+
+        List<ItemStack> cardStacks = createCardStacks(deck.get().getCards());
+        if (cardStacks.isEmpty()) {
+            player.displayClientMessage(new TextComponent("That deck has no cards to deposit."), true);
+            return;
+        }
+
+        if (!canInsertCards(station.getItems(), cardStacks)) {
+            player.displayClientMessage(new TextComponent("Not enough station card storage for those cards."), true);
+            return;
+        }
+
+        if (!canClearStationDeck(stack)) {
+            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
+            return;
+        }
+
+        insertCards(station.getItems(), cardStacks);
+        if (!clearStationDeck(stack)) {
+            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
+            return;
+        }
+
+        station.getItems().setStackInSlot(CardDeckStationBlockEntity.DECK_SLOT, stack);
+        player.containerMenu.broadcastChanges();
+        player.displayClientMessage(new TextComponent("Deposited " + cardStacks.size()
+                + " cards for preset: " + preset.get().name()), true);
+        sendPresets(player, station);
+    }
+
     public static LoadPlan planLoad(CardDeckStationBlockEntity station, DeckPreset preset) {
         MatchResult match = findMatchingStoredCards(station.getItems(), preset.deckData());
         ItemStack stack = station.getItems().getStackInSlot(CardDeckStationBlockEntity.DECK_SLOT);

@@ -32,6 +32,10 @@ public class ModNetworks {
                     LoadDeckPresetC2SPacket::encode,
                     LoadDeckPresetC2SPacket::decode,
                     LoadDeckPresetC2SPacket::handle);
+            CHANNEL.registerMessage(packetId++, DepositDeckCardsToPresetC2SPacket.class,
+                    DepositDeckCardsToPresetC2SPacket::encode,
+                    DepositDeckCardsToPresetC2SPacket::decode,
+                    DepositDeckCardsToPresetC2SPacket::handle);
             CHANNEL.registerMessage(packetId++, SyncDeckPresetsS2CPacket.class,
                     SyncDeckPresetsS2CPacket::encode,
                     SyncDeckPresetsS2CPacket::decode,

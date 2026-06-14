@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import iskallia.vault.client.gui.framework.ScreenRenderers;
 import iskallia.vault.client.gui.framework.ScreenTextures;
 import net.bustin.deck_manager.menu.CardDeckStationMenu;
+import net.bustin.deck_manager.network.DepositDeckCardsToPresetC2SPacket;
 import net.bustin.deck_manager.network.LoadDeckPresetC2SPacket;
 import net.bustin.deck_manager.network.ModNetworks;
 import net.bustin.deck_manager.network.RequestDeckPresetsC2SPacket;
@@ -32,6 +33,8 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
             new ResourceLocation("deck_manager", "textures/gui/tab_background_top.png");
     private static final ResourceLocation SELECTED_PRESET_TAB =
             new ResourceLocation("deck_manager", "textures/gui/tab_background_top_selected.png");
+    private static final ResourceLocation TAB_DEPOSIT =
+            new ResourceLocation("deck_manager", "textures/gui/tab_deposit.png");
     private static final ResourceLocation SOPHISTICATED_GUI_CONTROLS =
             new ResourceLocation("sophisticatedcore", "textures/gui/gui_controls.png");
     private static final int GUI_TEXTURE_WIDTH = 370;
@@ -54,6 +57,12 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     private static final int PREVIEW_PANEL_BOTTOM = 188;
     private static final int ACTION_BUTTON_Y = 167;
     private static final int ACTION_BUTTON_HEIGHT = 14;
+    private static final int DEPOSIT_BUTTON_X = 4;
+    private static final int DEPOSIT_BUTTON_Y = 34;
+    private static final int DEPOSIT_BUTTON_WIDTH = 20;
+    private static final int DEPOSIT_BUTTON_HEIGHT = 18;
+    private static final int DEPOSIT_TEXTURE_WIDTH = 30;
+    private static final int DEPOSIT_TEXTURE_HEIGHT = 28;
     private static final int TITLE_X = 31;
     private static final int TITLE_Y = 6;
     private static final int INVENTORY_LABEL_X = 48;
@@ -61,6 +70,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
 
     private final List<PresetSummary> presets = new ArrayList<>();
     private EditBox presetNameBox;
+    private Button depositButton;
     private Button loadButton;
     private int selectedPreset = -1;
     private int presetSyncTicks = 0;
@@ -86,6 +96,23 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
                 new TextComponent("Save"), button -> ModNetworks.CHANNEL.sendToServer(
                 new SaveHeldDeckPresetC2SPacket(this.menu.getBlockPos(), this.presetNameBox.getValue()))));
 
+        this.depositButton = new Button(this.leftPos + DEPOSIT_BUTTON_X, this.topPos + DEPOSIT_BUTTON_Y,
+                DEPOSIT_BUTTON_WIDTH, DEPOSIT_BUTTON_HEIGHT, TextComponent.EMPTY,
+                button -> ModNetworks.CHANNEL.sendToServer(new DepositDeckCardsToPresetC2SPacket(
+                        this.menu.getBlockPos(), getSelectedPreset().map(PresetSummary::name).orElse("")))) {
+            @Override
+            public void renderButton(PoseStack poseStack, int mouseX, int mouseY, float partialTick) {
+                RenderSystem.setShader(GameRenderer::getPositionTexShader);
+                RenderSystem.setShaderTexture(0, TAB_DEPOSIT);
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, this.active ? 1.0f : 0.45f);
+                blit(poseStack, this.x, this.y, this.width, this.height, 0.0f, 0.0f,
+                        DEPOSIT_TEXTURE_WIDTH, DEPOSIT_TEXTURE_HEIGHT,
+                        DEPOSIT_TEXTURE_WIDTH, DEPOSIT_TEXTURE_HEIGHT);
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+            }
+        };
+        this.addRenderableWidget(this.depositButton);
+
         this.loadButton = new Button(this.leftPos + 162, this.topPos + ACTION_BUTTON_Y, 42, ACTION_BUTTON_HEIGHT,
                 new TextComponent("Load"), button -> ModNetworks.CHANNEL.sendToServer(
                 new LoadDeckPresetC2SPacket(this.menu.getBlockPos(),
@@ -99,6 +126,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     protected void containerTick() {
         super.containerTick();
         this.presetNameBox.tick();
+        updateDepositButtonState();
         updateLoadButtonState();
         if (++this.presetSyncTicks >= 20) {
             this.presetSyncTicks = 0;
@@ -131,6 +159,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
         renderSelectedPresetCards(poseStack);
         this.renderTooltip(poseStack, mouseX, mouseY);
         renderPresetTabTooltip(poseStack, mouseX, mouseY);
+        renderDepositTooltip(poseStack, mouseX, mouseY);
     }
 
     @Override
@@ -173,6 +202,19 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
         }
     }
 
+    private void renderDepositTooltip(PoseStack poseStack, int mouseX, int mouseY) {
+        if (isDepositButtonHovered(mouseX, mouseY)) {
+            this.renderTooltip(poseStack, new TextComponent("deposit cards to preset"), mouseX, mouseY);
+        }
+    }
+
+    private boolean isDepositButtonHovered(double mouseX, double mouseY) {
+        return mouseX >= this.leftPos + DEPOSIT_BUTTON_X
+                && mouseX < this.leftPos + DEPOSIT_BUTTON_X + DEPOSIT_BUTTON_WIDTH
+                && mouseY >= this.topPos + DEPOSIT_BUTTON_Y
+                && mouseY < this.topPos + DEPOSIT_BUTTON_Y + DEPOSIT_BUTTON_HEIGHT;
+    }
+
     private int hoveredPresetTab(double mouseX, double mouseY) {
         for (int i = 0; i < this.presets.size(); i++) {
             boolean selected = i == this.selectedPreset;
@@ -203,6 +245,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
             this.selectedPreset = 0;
         }
         updateLoadButtonState();
+        updateDepositButtonState();
     }
 
     private void selectPreset(int index) {
@@ -219,6 +262,7 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
 
         this.selectedPreset = index;
         updateLoadButtonState();
+        updateDepositButtonState();
     }
 
     private java.util.Optional<PresetSummary> getSelectedPreset() {
@@ -244,6 +288,14 @@ public class CardDeckStationScreen extends AbstractContainerScreen<CardDeckStati
     private void updateLoadButtonState() {
         if (this.loadButton != null) {
             this.loadButton.active = getSelectedPreset().map(PresetSummary::canLoad).orElse(false);
+        }
+    }
+
+    private void updateDepositButtonState() {
+        if (this.depositButton != null) {
+            this.depositButton.active = getSelectedPreset()
+                    .map(preset -> preset.hasDeck() && preset.compatibleDeck() && preset.currentDeckCards() > 0)
+                    .orElse(false);
         }
     }
 
