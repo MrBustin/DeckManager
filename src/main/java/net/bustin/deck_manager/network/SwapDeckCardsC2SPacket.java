@@ -7,17 +7,16 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
-public record LoadDeckPresetC2SPacket(BlockPos pos, String presetName) {
-    public static void encode(LoadDeckPresetC2SPacket message, FriendlyByteBuf buffer) {
+public record SwapDeckCardsC2SPacket(BlockPos pos) {
+    public static void encode(SwapDeckCardsC2SPacket message, FriendlyByteBuf buffer) {
         buffer.writeBlockPos(message.pos);
-        buffer.writeUtf(message.presetName);
     }
 
-    public static LoadDeckPresetC2SPacket decode(FriendlyByteBuf buffer) {
-        return new LoadDeckPresetC2SPacket(buffer.readBlockPos(), buffer.readUtf());
+    public static SwapDeckCardsC2SPacket decode(FriendlyByteBuf buffer) {
+        return new SwapDeckCardsC2SPacket(buffer.readBlockPos());
     }
 
-    public static void handle(LoadDeckPresetC2SPacket message, Supplier<NetworkEvent.Context> contextSupplier) {
+    public static void handle(SwapDeckCardsC2SPacket message, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
@@ -26,7 +25,7 @@ public record LoadDeckPresetC2SPacket(BlockPos pos, String presetName) {
             }
 
             DeckPresetNetworking.findStation(player, message.pos)
-                    .ifPresent(station -> DeckPresetNetworking.loadPresetToStationDeck(player, station, message.presetName));
+                    .ifPresent(station -> DeckPresetNetworking.swapStationDeck(player, station));
         });
         context.setPacketHandled(true);
     }

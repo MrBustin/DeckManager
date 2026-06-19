@@ -1,7 +1,6 @@
 package net.bustin.deck_manager.menu;
 
 import iskallia.vault.item.CardDeckItem;
-import iskallia.vault.item.CardItem;
 import net.bustin.deck_manager.blocks.ModBlocks;
 import net.bustin.deck_manager.blocks.entity.custom.CardDeckStationBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -17,11 +16,11 @@ import net.minecraftforge.items.ItemStackHandler;
 import net.minecraftforge.items.SlotItemHandler;
 
 public class CardDeckStationMenu extends AbstractContainerMenu {
-    public static final int DECK_SLOT_X = 6;
-    public static final int DECK_SLOT_Y = 11;
-    public static final int PLAYER_INVENTORY_X = 52;
-    public static final int PLAYER_INVENTORY_Y = 202;
-    public static final int PLAYER_HOTBAR_Y = 260;
+    public static final int DECK_SLOT_X = 2;
+    public static final int DECK_SLOT_Y = 20;
+    public static final int PLAYER_INVENTORY_X = 45;
+    public static final int PLAYER_INVENTORY_Y = 209;
+    public static final int PLAYER_HOTBAR_Y = 267;
 
     private final ContainerLevelAccess access;
     private final BlockPos blockPos;
@@ -73,11 +72,6 @@ public class CardDeckStationMenu extends AbstractContainerMenu {
                     CardDeckStationBlockEntity.DECK_SLOT + 1, false)) {
                 return ItemStack.EMPTY;
             }
-        } else if (slotStack.getItem() instanceof CardItem) {
-            if (!this.moveItemStackTo(slotStack, CardDeckStationBlockEntity.CARD_STORAGE_START,
-                    stationEnd, false)) {
-                return ItemStack.EMPTY;
-            }
         } else if (index < inventoryEnd) {
             if (!this.moveItemStackTo(slotStack, inventoryEnd, hotbarEnd, false)) {
                 return ItemStack.EMPTY;
@@ -127,7 +121,7 @@ public class CardDeckStationMenu extends AbstractContainerMenu {
                 this.addSlot(new SlotItemHandler(stationItems, slot, -10000, -10000) {
                     @Override
                     public boolean mayPlace(ItemStack stack) {
-                        return stack.getItem() instanceof CardItem;
+                        return false;
                     }
                 });
             }

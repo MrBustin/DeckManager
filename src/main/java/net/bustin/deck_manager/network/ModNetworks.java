@@ -24,18 +24,10 @@ public class ModNetworks {
                     RequestDeckPresetsC2SPacket::encode,
                     RequestDeckPresetsC2SPacket::decode,
                     RequestDeckPresetsC2SPacket::handle);
-            CHANNEL.registerMessage(packetId++, SaveHeldDeckPresetC2SPacket.class,
-                    SaveHeldDeckPresetC2SPacket::encode,
-                    SaveHeldDeckPresetC2SPacket::decode,
-                    SaveHeldDeckPresetC2SPacket::handle);
-            CHANNEL.registerMessage(packetId++, LoadDeckPresetC2SPacket.class,
-                    LoadDeckPresetC2SPacket::encode,
-                    LoadDeckPresetC2SPacket::decode,
-                    LoadDeckPresetC2SPacket::handle);
-            CHANNEL.registerMessage(packetId++, DepositDeckCardsToPresetC2SPacket.class,
-                    DepositDeckCardsToPresetC2SPacket::encode,
-                    DepositDeckCardsToPresetC2SPacket::decode,
-                    DepositDeckCardsToPresetC2SPacket::handle);
+            CHANNEL.registerMessage(packetId++, SwapDeckCardsC2SPacket.class,
+                    SwapDeckCardsC2SPacket::encode,
+                    SwapDeckCardsC2SPacket::decode,
+                    SwapDeckCardsC2SPacket::handle);
             CHANNEL.registerMessage(packetId++, SyncDeckPresetsS2CPacket.class,
                     SyncDeckPresetsS2CPacket::encode,
                     SyncDeckPresetsS2CPacket::decode,

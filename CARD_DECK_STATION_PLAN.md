@@ -1,6 +1,6 @@
 # Card Deck Station Plan
 
-Goal: add a station that can save a card deck layout and load that saved preset onto a compatible deck, such as swapping all current cards in a belt deck with another saved belt-compatible card set.
+Goal: add a Card Deck Station that swaps the physical cards in an inserted deck with the cards currently stored inside the station. A freshly placed station has no stored cards. Pressing Swap with a filled deck stores that deck's cards in the station and leaves the deck empty. Pressing Swap again with another deck exchanges the station's stored cards with the inserted deck's current cards.
 
 ## Stage Status
 
@@ -12,7 +12,8 @@ Goal: add a station that can save a card deck layout and load that saved preset 
 - [x] Stage 6: Add station inventory for one deck and stored physical cards.
 - [x] Stage 7: Convert save/load to move physical cards through station inventory instead of copying card NBT.
 - [x] Stage 8: Add missing-card preview, swap planning, and safer failure messages.
-- [ ] Stage 9: Add polish: recipe, model/texture pass, localization, failure messages, and regression testing.
+- [x] Stage 9: Convert the station to a single swap-only mechanic.
+- [ ] Stage 10: Add polish: recipe, model/texture pass, localization, failure messages, and regression testing.
 
 ## Completed Work
 
@@ -282,6 +283,15 @@ Stage 8 UI bug fixes:
 
 ## Notes For Next Session
 
+- 2026-06-19 design change: the station is now a swap-only station instead of a named preset save/load station.
+- The GUI now has only one visible action button, `Swap`. The name bar, Save button, Load button, Deposit button, and preset tabs were removed from the visible screen.
+- The station syncs at most one stored deck preview, backed by the existing serialized deck layout and hidden physical card storage.
+- Swap behavior:
+  - If the station has no stored deck, Swap converts the inserted deck's real cards into physical stored `CardItem`s, saves the inserted deck layout for preview, and empties the deck through `CardDeckContainer`.
+  - If the station has a stored deck, Swap requires the inserted deck id to match the stored deck id, removes the matching stored physical cards, inserts the inserted deck's current cards into station storage, applies the stored layout to the inserted deck, and updates the station preview to the newly stored incoming layout.
+  - If the inserted deck has no real cards during a full swap, the station loads its stored cards into the deck and becomes empty.
+- Player shift-click can no longer insert loose cards into hidden station storage; hidden storage is internal to the swap flow.
+- Old save/load/deposit packet classes still exist but are no longer registered in `ModNetworks`.
 - 2026-06-13 GUI polish: centered the player inventory in the station's right-side work area, aligned the selected-preset preview to the same center line, expanded the screen height, and made tall deck previews shift upward within the available preview area so they no longer render into the player inventory.
 - 2026-06-13 GUI revamp: switched the station screen to `deck_manager_gui.png`, aligned the real deck/player slots to that texture, replaced the old preset text list with top tab buttons using `tab_background_top.png` and `tab_background_top_selected.png`, removed Prev/Next/Refresh, and moved Save/Load into the gap between preview and player inventory.
 - 2026-06-13 expanded GUI follow-up: realigned the station screen after `deck_manager_gui.png` was expanded to a `239x284` visible area, moved player inventory hitboxes to the lower grid, widened the preview panel math, and shifted Save/Load/name controls to the new action row.

@@ -33,10 +33,10 @@ import java.util.Optional;
 import java.util.Set;
 
 public class DeckPresetNetworking {
-    private static final int MAX_PRESET_NAME_LENGTH = 32;
+    private static final String STORED_DECK_NAME = "Stored Deck";
 
     public static void sendPresets(ServerPlayer player, CardDeckStationBlockEntity station) {
-        List<SyncDeckPresetsS2CPacket.PresetSummary> summaries = station.getPresets().stream()
+        List<SyncDeckPresetsS2CPacket.PresetSummary> summaries = getStoredDeckPreset(station).stream()
                 .map(preset -> {
                     LoadPlan loadPlan = planLoad(station, preset);
                     return SyncDeckPresetsS2CPacket.PresetSummary.fromPreset(preset, loadPlan,
@@ -45,6 +45,121 @@ public class DeckPresetNetworking {
                 .toList();
         ModNetworks.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                 new SyncDeckPresetsS2CPacket(station.getBlockPos(), summaries));
+    }
+
+    public static void swapStationDeck(ServerPlayer player, CardDeckStationBlockEntity station) {
+        ItemStack stack = station.getItems().getStackInSlot(CardDeckStationBlockEntity.DECK_SLOT);
+        if (stack.isEmpty()) {
+            player.displayClientMessage(new TextComponent("Put a Vault Hunters card deck in the station deck slot."), true);
+            return;
+        }
+
+        Optional<CardDeck> deck = CardDeckItem.getCardDeck(stack);
+        if (deck.isEmpty()) {
+            player.displayClientMessage(new TextComponent("That deck has no saved card layout yet."), true);
+            return;
+        }
+
+        Optional<CompoundTag> incomingDeckData = deck.get().writeNbt();
+        if (incomingDeckData.isEmpty()) {
+            player.displayClientMessage(new TextComponent("Could not read that deck layout."), true);
+            return;
+        }
+
+        List<ItemStack> incomingCards = createCardStacks(deck.get().getCards());
+        Optional<DeckPreset> storedPreset = getStoredDeckPreset(station);
+        if (storedPreset.isEmpty()) {
+            storeIncomingDeck(player, station, stack, incomingDeckData.get(), incomingCards);
+            return;
+        }
+
+        DeckPreset stored = storedPreset.get();
+        String targetDeckId = CardDeckItem.getId(stack);
+        if (!stored.sourceDeckId().equals(targetDeckId)) {
+            player.displayClientMessage(new TextComponent("Stored cards are for deck '" + stored.sourceDeckId()
+                    + "', not '" + targetDeckId + "'."), true);
+            return;
+        }
+
+        LoadPlan plan = planLoad(station, stored);
+        if (plan.missingCards() > 0) {
+            player.displayClientMessage(new TextComponent("Station storage is missing " + plan.missingCards()
+                    + " stored cards."), true);
+            return;
+        }
+        if (!plan.canStoreReturnedCards()) {
+            player.displayClientMessage(new TextComponent("Not enough station card storage for the deck's current cards."), true);
+            return;
+        }
+
+        ListTag storedCards = stored.deckData().getList("cards", 10);
+        if (!canReplaceDeckCards(stack, storedCards)) {
+            player.displayClientMessage(new TextComponent("Could not swap cards onto this deck."), true);
+            return;
+        }
+
+        for (int slot : plan.matchedStorageSlots()) {
+            station.getItems().extractItem(slot, 1, false);
+        }
+        insertCards(station.getItems(), incomingCards);
+
+        if (!replaceDeckCards(stack, storedCards)) {
+            player.displayClientMessage(new TextComponent("Could not swap cards onto this deck."), true);
+            return;
+        }
+
+        station.clearPresets();
+        if (!incomingCards.isEmpty()) {
+            station.upsertPreset(new DeckPreset(
+                    STORED_DECK_NAME,
+                    CardDeckItem.getId(stack),
+                    stack.getHoverName().getString(),
+                    incomingDeckData.get(),
+                    System.currentTimeMillis()
+            ));
+        }
+
+        station.getItems().setStackInSlot(CardDeckStationBlockEntity.DECK_SLOT, stack);
+        player.containerMenu.broadcastChanges();
+        player.displayClientMessage(new TextComponent("Swapped deck cards with the station."), true);
+        sendPresets(player, station);
+    }
+
+    private static void storeIncomingDeck(ServerPlayer player, CardDeckStationBlockEntity station, ItemStack stack,
+                                          CompoundTag incomingDeckData, List<ItemStack> incomingCards) {
+        if (incomingCards.isEmpty()) {
+            player.displayClientMessage(new TextComponent("That deck has no cards to store."), true);
+            return;
+        }
+
+        if (!canInsertCards(station.getItems(), incomingCards)) {
+            player.displayClientMessage(new TextComponent("Not enough station card storage for this deck."), true);
+            return;
+        }
+
+        if (!canClearStationDeck(stack)) {
+            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
+            return;
+        }
+
+        insertCards(station.getItems(), incomingCards);
+        if (!clearStationDeck(stack)) {
+            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
+            return;
+        }
+
+        station.clearPresets();
+        station.upsertPreset(new DeckPreset(
+                STORED_DECK_NAME,
+                CardDeckItem.getId(stack),
+                stack.getHoverName().getString(),
+                incomingDeckData,
+                System.currentTimeMillis()
+        ));
+        station.getItems().setStackInSlot(CardDeckStationBlockEntity.DECK_SLOT, stack);
+        player.containerMenu.broadcastChanges();
+        player.displayClientMessage(new TextComponent("Stored deck cards in the station."), true);
+        sendPresets(player, station);
     }
 
     public static Optional<CardDeckStationBlockEntity> findStation(ServerPlayer player, BlockPos pos) {
@@ -60,192 +175,6 @@ public class DeckPresetNetworking {
             return Optional.of(station);
         }
         return Optional.empty();
-    }
-
-    public static void saveStationDeckPreset(ServerPlayer player, CardDeckStationBlockEntity station, String rawName) {
-        String presetName = sanitizePresetName(rawName);
-        if (presetName.isEmpty()) {
-            presetName = nextPresetName(station);
-        }
-
-        ItemStack stack = station.getItems().getStackInSlot(CardDeckStationBlockEntity.DECK_SLOT);
-        if (stack.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Put a Vault Hunters card deck in the station deck slot."), true);
-            return;
-        }
-
-        Optional<CardDeck> deck = CardDeckItem.getCardDeck(stack);
-        if (deck.isEmpty()) {
-            player.displayClientMessage(new TextComponent("That deck has no saved card layout yet."), true);
-            return;
-        }
-
-        Optional<CompoundTag> deckData = deck.get().writeNbt();
-        if (deckData.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Could not read that deck layout."), true);
-            return;
-        }
-
-        List<ItemStack> cardStacks = createCardStacks(deck.get().getCards());
-        if (!canInsertCards(station.getItems(), cardStacks)) {
-            player.displayClientMessage(new TextComponent("Not enough station card storage for this deck."), true);
-            return;
-        }
-
-        if (!canClearStationDeck(stack)) {
-            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
-            return;
-        }
-
-        insertCards(station.getItems(), cardStacks);
-        if (!clearStationDeck(stack)) {
-            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
-            return;
-        }
-
-        station.upsertPreset(new DeckPreset(
-                presetName,
-                CardDeckItem.getId(stack),
-                stack.getHoverName().getString(),
-                deckData.get(),
-                System.currentTimeMillis()
-        ));
-        station.getItems().setStackInSlot(CardDeckStationBlockEntity.DECK_SLOT, stack);
-        player.containerMenu.broadcastChanges();
-        player.displayClientMessage(new TextComponent("Saved preset and moved cards into station storage: " + presetName), true);
-        sendPresets(player, station);
-    }
-
-    public static void loadPresetToStationDeck(ServerPlayer player, CardDeckStationBlockEntity station, String rawName) {
-        String presetName = sanitizePresetName(rawName);
-        if (presetName.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Select a preset first."), true);
-            return;
-        }
-
-        Optional<DeckPreset> preset = station.getPreset(presetName);
-        if (preset.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Preset not found: " + presetName), true);
-            return;
-        }
-
-        ItemStack stack = station.getItems().getStackInSlot(CardDeckStationBlockEntity.DECK_SLOT);
-        if (stack.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Put a compatible Vault Hunters card deck in the station deck slot."), true);
-            return;
-        }
-
-        String targetDeckId = CardDeckItem.getId(stack);
-        if (!preset.get().sourceDeckId().equals(targetDeckId)) {
-            player.displayClientMessage(new TextComponent("Preset is for deck '" + preset.get().sourceDeckId()
-                    + "', not '" + targetDeckId + "'."), true);
-            return;
-        }
-
-        Optional<CardDeck> targetDeck = CardDeckItem.getCardDeck(stack);
-        if (targetDeck.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Target deck has no card deck data."), true);
-            return;
-        }
-
-        LoadPlan plan = planLoad(station, preset.get());
-        if (!plan.hasDeck()) {
-            player.displayClientMessage(new TextComponent("Put a compatible Vault Hunters card deck in the station deck slot."), true);
-            return;
-        }
-        if (plan.missingCards() > 0) {
-            player.displayClientMessage(new TextComponent("Station storage is missing " + plan.missingCards()
-                    + " of " + plan.requiredCards() + " cards for this preset."), true);
-            return;
-        }
-        if (!plan.canStoreReturnedCards()) {
-            player.displayClientMessage(new TextComponent("Not enough station card storage to return "
-                    + plan.currentDeckCards() + " current deck cards."), true);
-            return;
-        }
-
-        ListTag presetCards = preset.get().deckData().getList("cards", 10);
-        if (!canReplaceDeckCards(stack, presetCards)) {
-            player.displayClientMessage(new TextComponent("Could not load that preset onto this deck."), true);
-            return;
-        }
-
-        for (int slot : plan.matchedStorageSlots()) {
-            station.getItems().extractItem(slot, 1, false);
-        }
-        insertCards(station.getItems(), plan.currentCardStacks());
-
-        if (!replaceDeckCards(stack, presetCards)) {
-            player.displayClientMessage(new TextComponent("Could not load that preset onto this deck."), true);
-            return;
-        }
-
-        station.getItems().setStackInSlot(CardDeckStationBlockEntity.DECK_SLOT, stack);
-        player.containerMenu.broadcastChanges();
-        player.displayClientMessage(new TextComponent("Loaded preset and swapped physical cards: " + preset.get().name()), true);
-        sendPresets(player, station);
-    }
-
-    public static void depositStationDeckCardsToPreset(ServerPlayer player, CardDeckStationBlockEntity station,
-                                                       String rawName) {
-        String presetName = sanitizePresetName(rawName);
-        if (presetName.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Select a preset first."), true);
-            return;
-        }
-
-        Optional<DeckPreset> preset = station.getPreset(presetName);
-        if (preset.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Preset not found: " + presetName), true);
-            return;
-        }
-
-        ItemStack stack = station.getItems().getStackInSlot(CardDeckStationBlockEntity.DECK_SLOT);
-        if (stack.isEmpty()) {
-            player.displayClientMessage(new TextComponent("Put a compatible Vault Hunters card deck in the station deck slot."), true);
-            return;
-        }
-
-        String targetDeckId = CardDeckItem.getId(stack);
-        if (!preset.get().sourceDeckId().equals(targetDeckId)) {
-            player.displayClientMessage(new TextComponent("Preset is for deck '" + preset.get().sourceDeckId()
-                    + "', not '" + targetDeckId + "'."), true);
-            return;
-        }
-
-        Optional<CardDeck> deck = CardDeckItem.getCardDeck(stack);
-        if (deck.isEmpty()) {
-            player.displayClientMessage(new TextComponent("That deck has no saved card layout yet."), true);
-            return;
-        }
-
-        List<ItemStack> cardStacks = createCardStacks(deck.get().getCards());
-        if (cardStacks.isEmpty()) {
-            player.displayClientMessage(new TextComponent("That deck has no cards to deposit."), true);
-            return;
-        }
-
-        if (!canInsertCards(station.getItems(), cardStacks)) {
-            player.displayClientMessage(new TextComponent("Not enough station card storage for those cards."), true);
-            return;
-        }
-
-        if (!canClearStationDeck(stack)) {
-            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
-            return;
-        }
-
-        insertCards(station.getItems(), cardStacks);
-        if (!clearStationDeck(stack)) {
-            player.displayClientMessage(new TextComponent("Could not empty the station deck."), true);
-            return;
-        }
-
-        station.getItems().setStackInSlot(CardDeckStationBlockEntity.DECK_SLOT, stack);
-        player.containerMenu.broadcastChanges();
-        player.displayClientMessage(new TextComponent("Deposited " + cardStacks.size()
-                + " cards for preset: " + preset.get().name()), true);
-        sendPresets(player, station);
     }
 
     public static LoadPlan planLoad(CardDeckStationBlockEntity station, DeckPreset preset) {
@@ -384,14 +313,7 @@ public class DeckPresetNetworking {
         }
     }
 
-    private static List<CompoundTag> getRequiredCardTags(CompoundTag deckData) {
-        return getRequiredCardEntries(deckData).stream()
-                .map(PositionedCardTag::cardTag)
-                .toList();
-    }
-
     private static List<PositionedCardTag> getRequiredCardEntries(CompoundTag deckData) {
-        List<CompoundTag> requiredCards = new ArrayList<>();
         List<PositionedCardTag> positionedCards = new ArrayList<>();
         ListTag cards = deckData.getList("cards", 10);
         for (int i = 0; i < cards.size(); i++) {
@@ -615,20 +537,13 @@ public class DeckPresetNetworking {
         return copy;
     }
 
-    private static String sanitizePresetName(String rawName) {
-        String name = rawName == null ? "" : rawName.trim();
-        if (name.length() > MAX_PRESET_NAME_LENGTH) {
-            return name.substring(0, MAX_PRESET_NAME_LENGTH);
+    private static Optional<DeckPreset> getStoredDeckPreset(CardDeckStationBlockEntity station) {
+        Optional<DeckPreset> stored = station.getPreset(STORED_DECK_NAME);
+        if (stored.isPresent()) {
+            return stored;
         }
-        return name;
-    }
 
-    private static String nextPresetName(CardDeckStationBlockEntity station) {
-        int presetNumber = 1;
-        while (station.getPreset("Preset " + presetNumber).isPresent()) {
-            presetNumber++;
-        }
-        return "Preset " + presetNumber;
+        return station.getPresets().stream().findFirst();
     }
 
     private record MatchResult(int requiredCards, List<Integer> matchedStorageSlots, int missingCards,
